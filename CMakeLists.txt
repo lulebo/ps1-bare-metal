@@ -123,3 +123,23 @@ convertImage(
 )
 addBinaryFile(example09_controllers fontTexture "${PROJECT_BINARY_DIR}/example09/fontTexture.dat")
 addBinaryFile(example09_controllers fontPalette "${PROJECT_BINARY_DIR}/example09/fontPalette.dat")
+
+# Example 10: CD-ROM reading and ISO 9660 directory listing.
+# Reuses the font and GPU helpers from example 09 to keep the code focused on
+# the CD-ROM driver rather than duplicating display infrastructure.
+addPS1Executable(
+	example10_cdrom
+	src/ps1/cdrom.c
+	src/10_cdrom/iso9660.c
+	src/10_cdrom/main.c
+	src/09_controllers/font.c
+	src/09_controllers/gpu.c
+)
+target_include_directories(example10_cdrom PRIVATE src/09_controllers)
+convertImage(
+	src/09_controllers/font.png 4
+	example10/fontTexture.dat
+	example10/fontPalette.dat
+)
+addBinaryFile(example10_cdrom fontTexture "${PROJECT_BINARY_DIR}/example10/fontTexture.dat")
+addBinaryFile(example10_cdrom fontPalette "${PROJECT_BINARY_DIR}/example10/fontPalette.dat")
