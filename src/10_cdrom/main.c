@@ -36,7 +36,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
-#include "ps1/cdrom.h"
+#include "cdrom.h"
 #include "iso9660.h"
 #include "font.h"
 #include "gpu.h"
@@ -56,6 +56,44 @@ extern const uint8_t fontTexture[], fontPalette[];
 // Static so it does not eat stack space
 static ISODirEntry _entries[MAX_ENTRIES];
 
+static GPUDMAChain _dmaChains[2];
+static bool        _usingSecondFrame = false;
+
+static void renderFrame(const TextureInfo *font, const char *text) {
+	int bufferX = _usingSecondFrame ? SCREEN_WIDTH : 0;
+	int bufferY = 0;
+
+	GPUDMAChain *chain = &_dmaChains[_usingSecondFrame];
+	_usingSecondFrame  = !_usingSecondFrame;
+
+	uint32_t *ptr;
+
+	GPU_GP1 = gp1_fbOffset(bufferX, bufferY);
+	chain->nextPacket = chain->data;
+
+	ptr    = allocateGP0Packet(chain, 4);
+	ptr[0] = gp0_setPage(0, true, false);
+	ptr[1] = gp0_fbOffset1(bufferX, bufferY);
+	ptr[2] = gp0_fbOffset2(
+		bufferX + SCREEN_WIDTH  - 1,
+		bufferY + SCREEN_HEIGHT - 1
+	);
+	ptr[3] = gp0_fbOrigin(bufferX, bufferY);
+
+	ptr    = allocateGP0Packet(chain, 3);
+	ptr[0] = gp0_rgb(0, 0, 48) | gp0_vramFill();
+	ptr[1] = gp0_xy(bufferX, bufferY);
+	ptr[2] = gp0_xy(SCREEN_WIDTH, SCREEN_HEIGHT);
+
+	printString(chain, font, 8, 8, text);
+
+	*(chain->nextPacket) = gp0_endTag(0);
+
+	waitForGP0Ready();
+	waitForVSync();
+	sendGPULinkedList(chain->data);
+}
+
 int main(int argc, const char **argv) {
 	initSerialIO(115200);
 
@@ -74,88 +112,60 @@ int main(int argc, const char **argv) {
 		FONT_COLOR_DEPTH
 	);
 
-	// Build the entire text output before entering the render loop.
-	// CD-ROM reads are blocking and can take hundreds of milliseconds,
-	// so we do them once here rather than inside the frame loop.
+	// Phase 1: wait for disc. Render a holding screen between each attempt
+	// so the display is live while cdrom_init() blocks waiting for the motor.
+	// The first frame is drawn *before* the initial cdrom_init() call so the
+	// screen is never blank, even when a disc is already present at boot.
+	renderFrame(&font, "CD-ROM Example\n\nInitializing drive...");
+
+	while (!cdrom_init()) {
+		char waitBuf[256];
+		sprintf(waitBuf,
+			"CD-ROM Example\n\nWaiting for disc...\n\n"
+			"Insert/boot a disc image, then\n"
+			"reset (no disc needed at boot).\n\n"
+			"init: step=%d lastIRQ=%d",
+			cdrom_lastStep, cdrom_lastIRQ);
+		renderFrame(&font, waitBuf);
+	}
+
+	renderFrame(&font, "CD-ROM Example\n\nReading disc...");
+
+	// Phase 2: disc is ready — do all blocking reads before entering the
+	// render loop, then display the result.
 	char displayBuf[1280];
 	char *p = displayBuf;
 
 	p += sprintf(p, "CD-ROM Example\n\n");
-	p += sprintf(p, "Initializing drive...\n");
 
-	if (!cdrom_init()) {
+	char volLabel[33];
+	if (!iso9660_readPVD(volLabel)) {
 		p += sprintf(p,
-			"FAILED: no disc or drive error.\n\n"
-			"In DuckStation:\n"
-			"  File > Change Disc\n"
-			"  load any ISO 9660 image.");
+			"FAILED: could not read PVD.\n"
+			"step=%d lastIRQ=%d\n"
+			"Disc may not be ISO 9660.",
+			cdrom_lastStep, cdrom_lastIRQ);
 	} else {
-		p += sprintf(p, "Drive ready.\n\n");
+		p += sprintf(p, "Disc : %s\n\nRoot directory:\n", volLabel);
 
-		char volLabel[33];
-		if (!iso9660_readPVD(volLabel)) {
-			p += sprintf(p,
-				"FAILED: could not read PVD.\n"
-				"Disc may not be ISO 9660.");
+		int n = iso9660_listRoot(_entries, MAX_ENTRIES);
+
+		if (n == 0) {
+			p += sprintf(p, "  (empty)\n");
 		} else {
-			p += sprintf(p, "Disc : %s\n\n", volLabel);
-			p += sprintf(p, "Root directory:\n");
-
-			int n = iso9660_listRoot(_entries, MAX_ENTRIES);
-
-			if (n == 0) {
-				p += sprintf(p, "  (empty)\n");
-			} else {
-				for (int i = 0; i < n && (p - displayBuf) < 1200; i++) {
-					p += sprintf(
-						p, "  %s%s\n",
-						_entries[i].name,
-						_entries[i].isDir ? "/" : ""
-					);
-				}
+			for (int i = 0; i < n && (p - displayBuf) < 1200; i++) {
+				p += sprintf(
+					p, "  %s%s\n",
+					_entries[i].name,
+					_entries[i].isDir ? "/" : ""
+				);
 			}
 		}
 	}
 
-	// Render loop — the text does not change after init, so we just
-	// redraw the same buffer every frame.
-	GPUDMAChain dmaChains[2];
-	bool        usingSecondFrame = false;
-
-	for (;;) {
-		int bufferX = usingSecondFrame ? SCREEN_WIDTH : 0;
-		int bufferY = 0;
-
-		GPUDMAChain *chain = &dmaChains[usingSecondFrame];
-		usingSecondFrame   = !usingSecondFrame;
-
-		uint32_t *ptr;
-
-		GPU_GP1 = gp1_fbOffset(bufferX, bufferY);
-		chain->nextPacket = chain->data;
-
-		ptr    = allocateGP0Packet(chain, 4);
-		ptr[0] = gp0_setPage(0, true, false);
-		ptr[1] = gp0_fbOffset1(bufferX, bufferY);
-		ptr[2] = gp0_fbOffset2(
-			bufferX + SCREEN_WIDTH  - 1,
-			bufferY + SCREEN_HEIGHT - 1
-		);
-		ptr[3] = gp0_fbOrigin(bufferX, bufferY);
-
-		ptr    = allocateGP0Packet(chain, 3);
-		ptr[0] = gp0_rgb(0, 0, 48) | gp0_vramFill();
-		ptr[1] = gp0_xy(bufferX, bufferY);
-		ptr[2] = gp0_xy(SCREEN_WIDTH, SCREEN_HEIGHT);
-
-		printString(chain, &font, 8, 8, displayBuf);
-
-		*(chain->nextPacket) = gp0_endTag(0);
-
-		waitForGP0Ready();
-		waitForVSync();
-		sendGPULinkedList(chain->data);
-	}
+	// Phase 3: render loop — text is static, just redraw every frame.
+	for (;;)
+		renderFrame(&font, displayBuf);
 
 	return 0;
 }

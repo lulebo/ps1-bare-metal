@@ -129,7 +129,7 @@ addBinaryFile(example09_controllers fontPalette "${PROJECT_BINARY_DIR}/example09
 # the CD-ROM driver rather than duplicating display infrastructure.
 addPS1Executable(
 	example10_cdrom
-	src/ps1/cdrom.c
+	src/10_cdrom/cdrom.c
 	src/10_cdrom/iso9660.c
 	src/10_cdrom/main.c
 	src/09_controllers/font.c

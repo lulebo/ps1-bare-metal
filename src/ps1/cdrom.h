@@ -208,27 +208,3 @@ typedef enum {
 } CDROMModeFlag;
 
 #undef DEF
-
-/* CD-ROM driver (src/ps1/cdrom.c) */
-
-#include <stdbool.h>
-
-// Bytes in one ISO 9660 Mode 1 / Mode 2 Form 1 data sector
-#define CDROM_SECTOR_SIZE 2048
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-// Initialize the CD-ROM drive: spins up the motor, waits for ready, sets
-// 2x speed and 2048-byte sector mode. Returns false if no disc is present
-// or the drive does not respond within the timeout.
-bool cdrom_init(void);
-
-// Read one 2048-byte data sector at logical block address lba into buf.
-// buf must be 4-byte aligned. Returns false on seek/read error or timeout.
-bool cdrom_readSector(uint32_t lba, void *buf);
-
-#ifdef __cplusplus
-}
-#endif

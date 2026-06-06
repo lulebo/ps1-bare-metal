@@ -52,7 +52,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "iso9660.h"
-#include "ps1/cdrom.h"
+#include "cdrom.h"
 
 #define PVD_LBA             16
 #define PVD_VOL_ID_OFFSET   40
@@ -74,6 +74,12 @@
 // other while it is still being parsed.
 static uint8_t _pvdBuf[CDROM_SECTOR_SIZE] __attribute__((aligned(4)));
 static uint8_t _dirBuf[CDROM_SECTOR_SIZE] __attribute__((aligned(4)));
+
+// Root directory location, cached by iso9660_readPVD so that iso9660_listRoot
+// does not have to read and parse the PVD a second time.
+static uint32_t _rootLBA;
+static uint32_t _rootSize;
+static bool     _haveRoot = false;
 
 static uint32_t _rd32le(const uint8_t *p) {
 	return (uint32_t)p[0]
@@ -101,6 +107,12 @@ bool iso9660_readPVD(char *volLabel) {
 	if (_pvdBuf[0] != 1 || memcmp(&_pvdBuf[1], "CD001", 5) != 0)
 		return false;
 
+	// Cache the root directory record so listRoot need not re-read the PVD
+	const uint8_t *rootRec = &_pvdBuf[PVD_ROOT_OFFSET];
+	_rootLBA  = _rd32le(&rootRec[DR_LBA]);
+	_rootSize = _rd32le(&rootRec[DR_SIZE]);
+	_haveRoot = true;
+
 	if (volLabel) {
 		// Strip trailing spaces from the 32-byte volume identifier
 		int end = PVD_VOL_ID_LEN;
@@ -114,15 +126,13 @@ bool iso9660_readPVD(char *volLabel) {
 }
 
 int iso9660_listRoot(ISODirEntry *entries, int maxEntries) {
-	// Re-read the PVD to locate the root directory
-	if (!cdrom_readSector(PVD_LBA, _pvdBuf))
-		return 0;
-	if (_pvdBuf[0] != 1 || memcmp(&_pvdBuf[1], "CD001", 5) != 0)
+	// Locate the root directory. Normally iso9660_readPVD has already cached
+	// it; fall back to reading the PVD here if listRoot is called on its own.
+	if (!_haveRoot && !iso9660_readPVD(NULL))
 		return 0;
 
-	const uint8_t *rootRec = &_pvdBuf[PVD_ROOT_OFFSET];
-	uint32_t dirLBA        = _rd32le(&rootRec[DR_LBA]);
-	uint32_t dirSize       = _rd32le(&rootRec[DR_SIZE]);
+	uint32_t dirLBA  = _rootLBA;
+	uint32_t dirSize = _rootSize;
 
 	int found = 0;
 

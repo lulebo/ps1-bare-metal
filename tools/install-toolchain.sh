@@ -1,7 +1,9 @@
 #!/bin/bash
 #
 # Install mipsel-none-elf GCC toolchain for PS1 bare-metal development.
-# Builds binutils + GCC from source into ~/mipsel-none-elf (no sudo needed).
+# Builds binutils + GCC from source into ~/mipsel-none-elf. The toolchain
+# itself installs under your home directory; only the initial apt dependency
+# step needs sudo.
 #
 # Usage (run from a WSL terminal):
 #   bash tools/install-toolchain.sh
@@ -24,6 +26,7 @@ BINUTILS_VER="2.45"
 GCC_VER="15.2.0"
 
 echo "==> Installing build dependencies (requires sudo)..."
+sudo apt-get update
 sudo apt-get install -y \
     build-essential wget flex bison \
     libgmp-dev libmpfr-dev libmpc-dev
