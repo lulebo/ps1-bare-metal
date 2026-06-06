@@ -20,6 +20,7 @@ The following examples are currently available:
 |   7 | <img alt="Example 7" src="src/07_orderingTable/screenshot.png" width="100" /> | [Using ordering tables to control GPU drawing order](src/07_orderingTable/main.c) |
 |   8 | <img alt="Example 8" src="src/08_spinningCube/screenshot.png" width="100" />  | [Drawing a 3D spinning cube using the GTE](src/08_spinningCube/main.c)            |
 |   9 | <img alt="Example 9" src="src/09_controllers/screenshot.png" width="100" />   | [Getting input from connected controllers](src/09_controllers/main.c)             |
+|  10 | <img alt="Example 10" src="src/10_cdrom/screenshot.png" width="100" />        | [Reading files from the CD-ROM and parsing ISO 9660](src/10_cdrom/main.c)         |
 
 New examples showing how to make use of more hardware features will be added
 over time.
